@@ -1,0 +1,307 @@
+openapi: 3.0.3
+info:
+  title: Amrutam Telemedicine Backend API
+  version: 0.1.0
+  description: REST API contract for the implemented assignment scope.
+servers:
+  - url: http://localhost:3000/api
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+  - name: Auth
+  - name: Availability
+  - name: Booking
+  - name: Consultation
+  - name: Search
+  - name: Payments
+  - name: Audit
+  - name: Analytics
+paths:
+  /health:
+    get:
+      security: []
+      tags: [Health]
+      responses:
+        '200': {description: Healthy}
+  /ready:
+    get:
+      security: []
+      tags: [Health]
+      responses:
+        '200': {description: Database ready}
+        '503': {description: Database unavailable}
+  /metrics:
+    get:
+      security: []
+      tags: [Health]
+      responses:
+        '200':
+          description: Prometheus-compatible metrics
+          content:
+            text/plain:
+              schema: {type: string}
+  /auth/register:
+    post:
+      security: []
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+      responses:
+        '201': {description: Registered}
+        '400': {description: Invalid input}
+        '409': {description: Email already registered}
+  /auth/login:
+    post:
+      security: []
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200': {description: Login or MFA challenge}
+        '401': {description: Invalid credentials}
+  /auth/mfa/verify:
+    post:
+      security: []
+      tags: [Auth]
+      responses:
+        '200': {description: MFA verification result}
+        '401': {description: Invalid challenge or code}
+  /auth/mfa/setup:
+    post:
+      tags: [Auth]
+      responses:
+        '200': {description: MFA setup result}
+  /auth/mfa/enable:
+    post:
+      tags: [Auth]
+      responses:
+        '200': {description: MFA enabled}
+  /auth/mfa/disable:
+    post:
+      tags: [Auth]
+      responses:
+        '200': {description: MFA disabled}
+  /doctors/availability:
+    post:
+      tags: [Availability]
+      description: Doctor-only availability creation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AvailabilityRequest'}
+      responses:
+        '201': {description: Created}
+        '400': {description: Invalid range}
+        '409': {description: Overlapping or duplicate slot}
+  /doctors/{doctorId}/availability:
+    get:
+      security: []
+      tags: [Availability]
+      parameters:
+        - {$ref: '#/components/parameters/doctorId'}
+      responses:
+        '200': {description: Availability slots}
+  /doctors/availability/{slotId}/status:
+    patch:
+      tags: [Availability]
+      parameters:
+        - {$ref: '#/components/parameters/slotId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AvailabilityStatusRequest'}
+      responses:
+        '200': {description: Updated}
+        '400': {description: Invalid status}
+        '404': {description: Slot not found}
+  /consultations:
+    post:
+      tags: [Booking]
+      description: Patient-only booking. Requires Idempotency-Key.
+      parameters:
+        - {$ref: '#/components/parameters/idempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [availabilitySlotId]
+              properties:
+                availabilitySlotId: {type: string, format: uuid}
+      responses:
+        '201': {description: Consultation created}
+        '200': {description: Idempotent retry}
+        '400': {description: Invalid request}
+        '409': {description: Slot conflict}
+  /consultations/{consultationId}:
+    get:
+      tags: [Booking]
+      parameters:
+        - {$ref: '#/components/parameters/consultationId'}
+      responses:
+        '200': {description: Consultation}
+        '403': {description: Forbidden}
+        '404': {description: Not found}
+  /consultations/{consultationId}/status:
+    patch:
+      tags: [Consultation]
+      parameters:
+        - {$ref: '#/components/parameters/consultationId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [scheduled, in_progress, completed, cancelled]
+      responses:
+        '200': {description: Status updated}
+        '409': {description: Invalid lifecycle transition}
+  /consultations/{consultationId}/prescriptions:
+    post:
+      tags: [Consultation]
+      parameters:
+        - {$ref: '#/components/parameters/consultationId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: {type: string, maxLength: 10000}
+      responses:
+        '201': {description: Prescription created}
+        '403': {description: Doctor not assigned}
+        '409': {description: Consultation not completed}
+    get:
+      tags: [Consultation]
+      parameters:
+        - {$ref: '#/components/parameters/consultationId'}
+      responses:
+        '200': {description: Prescriptions}
+  /doctors/search:
+    get:
+      security: []
+      tags: [Search]
+      parameters:
+        - {name: q, in: query, schema: {type: string, maxLength: 100}}
+        - {name: status, in: query, schema: {type: string, enum: [available, unavailable]}}
+        - {name: availableFrom, in: query, schema: {type: string, format: date-time}}
+        - {name: availableTo, in: query, schema: {type: string, format: date-time}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        '200': {description: Doctor search results}
+        '400': {description: Invalid filters}
+  /consultations/{consultationId}/payments:
+    post:
+      tags: [Payments]
+      parameters:
+        - {$ref: '#/components/parameters/consultationId'}
+        - {$ref: '#/components/parameters/idempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, currency]
+              properties:
+                amount: {type: string, pattern: '^\\d+(?:\\.\\d{1,2})?$'}
+                currency: {type: string, pattern: '^[A-Z]{3}$'}
+      responses:
+        '201': {description: Payment created}
+        '200': {description: Idempotent retry}
+        '409': {description: Duplicate payment or conflict}
+    get:
+      tags: [Payments]
+      parameters:
+        - {$ref: '#/components/parameters/consultationId'}
+      responses:
+        '200': {description: Consultation payment}
+  /payments/{paymentId}:
+    get:
+      tags: [Payments]
+      parameters:
+        - {$ref: '#/components/parameters/paymentId'}
+      responses:
+        '200': {description: Payment}
+        '403': {description: Forbidden}
+        '404': {description: Not found}
+  /admin/audit-logs:
+    get:
+      tags: [Audit]
+      description: Admin-only audit log access.
+      parameters:
+        - {name: action, in: query, schema: {type: string}}
+        - {name: entityType, in: query, schema: {type: string}}
+        - {name: actorUserId, in: query, schema: {type: string, format: uuid}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Audit logs}
+        '403': {description: Admin role required}
+  /admin/analytics:
+    get:
+      tags: [Analytics]
+      description: Admin-only aggregate analytics over existing domain data.
+      parameters:
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+      responses:
+        '200': {description: Aggregate analytics}
+        '400': {description: Invalid date range}
+        '403': {description: Admin role required}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    doctorId: {name: doctorId, in: path, required: true, schema: {type: string, format: uuid}}
+    slotId: {name: slotId, in: path, required: true, schema: {type: string, format: uuid}}
+    consultationId: {name: consultationId, in: path, required: true, schema: {type: string, format: uuid}}
+    paymentId: {name: paymentId, in: path, required: true, schema: {type: string, format: uuid}}
+    idempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email, maxLength: 320}
+        password: {type: string, minLength: 12, maxLength: 128}
+        displayName: {type: string, maxLength: 120}
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email, maxLength: 320}
+        password: {type: string, maxLength: 128}
+    AvailabilityRequest:
+      type: object
+      required: [startsAt, endsAt]
+      properties:
+        startsAt: {type: string, format: date-time}
+        endsAt: {type: string, format: date-time}
+    AvailabilityStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [available, unavailable]}
