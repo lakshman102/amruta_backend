@@ -21,7 +21,7 @@
     "analytics:smoke": "tsx scripts/analytics-smoke.ts",
     "observability:smoke": "tsx scripts/observability-smoke.ts",
     "reliability:smoke": "tsx scripts/reliability-smoke.ts",
-    "test": "node --import tsx --test tests"
+    "test": "node --import tsx --test \"tests/**/*.test.ts\""
   },
   "dependencies": {
     "express": "^5.1.0",
